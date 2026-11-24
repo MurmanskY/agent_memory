@@ -1,0 +1,5 @@
+# Our method — framework placeholder; add real knobs once the design is settled
+method: ours
+top_k: 10
+llm: openai
+embedder: openai

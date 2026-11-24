@@ -1,0 +1,4 @@
+# Full-context baseline: no memory management, truncate to the latest N items
+method: full_context
+top_k: 100000           # retrieve() ignores top_k; max_items caps the context
+max_items: 10000

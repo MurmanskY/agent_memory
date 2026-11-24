@@ -1,0 +1,14 @@
+# A-MEM baseline (papers/AMem.pdf; ported from WujiangXu/AgenticMemory)
+method: amem
+top_k: 10                 # retrieval k; paper uses k=10 by default (App. A.5)
+llm: hf                   # local Qwen3-4B-Instruct-2507 (GPU; paper used gpt-4o-mini)
+llm_kwargs:
+  model: models/Qwen3-4B-Instruct-2507
+  max_new_tokens: 1000
+embedder: sentence_transformers   # paper: all-MiniLM-L6-v2
+embedder_kwargs:
+  model: models/all-MiniLM-L6-v2  # local copy (HF: sentence-transformers/all-MiniLM-L6-v2)
+evo_threshold: 100        # rebuild the retrieval index every N evolutions
+k_neighbors: 5            # neighbors shown to the LLM for link/evolution decisions
+refresh_index: false      # paper behavior: evolved notes keep stale embeddings
+                          # until consolidation

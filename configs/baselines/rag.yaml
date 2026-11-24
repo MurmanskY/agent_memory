@@ -1,0 +1,6 @@
+# Naive RAG baseline
+method: rag
+top_k: 10
+embedder: hash          # use "openai" for real runs
+embedder_kwargs:
+  dim: 256
