@@ -162,6 +162,28 @@ mem0ai/mem0@v0.1.100 逐字一致；Mem0g（图变体）未包含。
 对抗题正确拒答率：Mem0 0.787 > SeCom 0.660 > A-MEM 0.617。
 A-MEM 强在事实回忆/跨记忆推理，Mem0 强在抗诱导（事实级精炼记忆噪声少）。
 
+### Memory-R1 复现（BASE 配置，conv-26 子集，~16min）
+
+写入路径与 Mem0 共享并复用其缓存（零 ingestion 成本）；答案侧为
+Memory-R1 的 Answer Agent：每 speaker top-30（共 60 候选）→ Memory
+Distillation → `**Answer:**` 提取（`--memory-answer` 开关）。
+论文的 RL 微调（PPO/GRPO）未发布 checkpoint，此处为论文 Figure 5 的
+BASE（未微调）配置，backbone Qwen3-4B。
+
+| 类别 | A-MEM F1 | SeCom F1 | Mem0 F1 | MemR1 F1 |
+|---|---|---|---|---|
+| Multi-hop | **0.223** | 0.137 | 0.101 | 0.185 |
+| Temporal | 0.355 | 0.282 | 0.206 | **0.424** |
+| Open-domain | 0.130 | 0.119 | 0.078 | 0.107 |
+| Single-hop | 0.250 | 0.229 | 0.118 | **0.290** |
+| **总体(不含对抗，MemR1 论文口径)** | 0.259 | 0.213 | 0.132 | **0.285** |
+| Adversarial（参考） | 0.623 | 0.676 | **0.808** | 0.101 |
+
+结论：(1) 同一块记忆 bank，Mem0 共享协议作答 0.132 → MemR1 Answer
+Agent 0.285，蒸馏作答翻倍以上——印证论文 Answer Agent 的消融收益；
+(2) MemR1 对抗题拒答率仅 0.128（其 prompt 无拒答机制，论文也将对抗题
+排除在评测外），Mem0 抗诱导最强；(3) A-MEM 仍是多跳最强。
+
 ## Roadmap
 
 1. ~~用本地开源模型跑 LoCoMo，对齐 A-MEM 论文结果~~（已完成，见上）
