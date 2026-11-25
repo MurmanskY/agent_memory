@@ -100,6 +100,121 @@ def test_amem_graceful_on_bad_llm():
     assert mem.retrieve("hello")
 
 
+class FakeMemoryR1LLM:
+    """Scripted LLM: rule-based fact extraction + queued manager ops."""
+
+    def __init__(self, manager_ops: list[dict]):
+        self.manager_ops = manager_ops
+        self.manager_calls = 0
+
+    def chat(self, system: str, user: str, **kwargs) -> str:
+        if user.startswith("Input:\n"):  # fact extraction
+            if "adopted" in user and "Luna" in user:
+                return json.dumps({"facts": ["Alice adopted another cat named Luna"]})
+            if "adopted" in user and "Mochi" in user:
+                return json.dumps({"facts": ["Alice adopted a cat named Mochi"]})
+            return json.dumps({"facts": []})
+        assert "smart memory manager" in user  # memory manager prompt
+        op = self.manager_ops[self.manager_calls]
+        self.manager_calls += 1
+        return json.dumps({"memory": [op]})
+
+
+def test_memoryr1_manager_add_update():
+    llm = FakeMemoryR1LLM([
+        # 1st/2nd manager calls: ADD (Alice bank, then backfill into Bob bank)
+        {"id": "0", "text": "Alice adopted a cat named Mochi", "event": "ADD"},
+        {"id": "0", "text": "Alice adopted a cat named Mochi", "event": "ADD"},
+        # 3rd/4th calls: UPDATE consolidates instead of fragmenting
+        {"id": "0", "text": "Alice adopted two cats, Mochi and Luna",
+         "event": "UPDATE", "old_memory": "Alice adopted a cat named Mochi"},
+        {"id": "0", "text": "Alice adopted two cats, Mochi and Luna",
+         "event": "UPDATE", "old_memory": "Alice adopted a cat named Mochi"},
+    ])
+    mem = get_baseline("memoryr1", {}, llm=llm, embedder=get_embedder("hash"))
+    mem.add("Alice: I adopted a cat named Mochi.", metadata={"timestamp": "t1"})
+    assert len(mem) == 1
+    mem.add("Bob: Cute! How old is Mochi?", metadata={"timestamp": "t1"})
+    assert len(mem) == 2  # one entry per speaker bank
+    mem.add("Alice: I adopted another cat named Luna.", metadata={"timestamp": "t2"})
+    assert len(mem) == 2  # UPDATE keeps one entry per bank
+    hits = mem.retrieve("cats", top_k=5)
+    assert len(hits) == 2
+    assert all("Mochi and Luna" in h.content for h in hits)
+    assert all(h.metadata["timestamp"] == "t2" for h in hits)
+    assert "t2: Alice adopted two cats" in mem.render(hits[0])
+
+
+def test_memoryr1_delete_and_noop():
+    llm = FakeMemoryR1LLM([
+        {"id": "0", "text": "Alice adopted a cat named Mochi", "event": "ADD"},
+        {"id": "0", "text": "Alice adopted a cat named Mochi", "event": "DELETE"},
+        {"id": "0", "text": "Alice adopted a cat named Mochi", "event": "NONE"},
+    ])
+    mem = get_baseline("memoryr1", {}, llm=llm, embedder=get_embedder("hash"))
+    mem.add("Alice: I adopted a cat named Mochi.")
+    assert len(mem) == 1
+    mem.add("Alice: I adopted a cat named Mochi.")
+    assert len(mem) == 0  # DELETE removed the entry
+    mem.add("Alice: I adopted a cat named Mochi.")
+    assert len(mem) == 0  # NONE changes nothing
+
+
+def test_memoryr1_answer_agent_distillation():
+    class FakeAnswerLLM:
+        def chat(self, system, user, **kwargs):
+            assert "Memories for user Alice" in system
+            assert "Memories for user Bob" in system
+            # memory distillation instructions from the official QWEN template
+            assert "Select memories you found that are useful" in system
+            return "Some reasoning.\n**Answer:** Two"
+
+    mem = get_baseline("memoryr1", {}, llm=FakeMemoryR1LLM([]),
+                       embedder=get_embedder("hash"))
+    from agent_memory.baselines.memoryr1 import _Bank
+    for owner in ("Alice", "Bob"):
+        bank = _Bank(mem.embedder.dim)
+        vec = mem.embedder.embed([f"{owner} memory about cats"])[0]
+        bank.add_entry(f"id-{owner}", f"{owner} memory about cats", "t1", vec)
+        mem._banks[owner] = bank
+    pred, ids = mem.answer("How many cats does Alice have?", FakeAnswerLLM(), top_k=30)
+    assert pred == "Two"
+    assert set(ids) == {"id-Alice", "id-Bob"}
+
+
+def test_memoryr1_graceful_on_bad_llm():
+    mem = get_baseline("memoryr1", {}, llm=get_llm("dummy"),
+                       embedder=get_embedder("hash"))
+    mem.add("Alice: hello")  # non-JSON extraction -> no facts, no crash
+    assert len(mem) == 0
+    assert mem.retrieve("hello") == []
+    pred, ids = mem.answer("hi?", get_llm("dummy"), top_k=30)
+    assert pred == "dummy-answer"  # extraction falls back to the raw text
+
+
+def test_mem0_base_prompt_and_raw_answer():
+    class FakeAnswerLLM:
+        def chat(self, system, user, **kwargs):
+            assert "Memories for user Alice" in system
+            # mem0's base prompt has NO memory-distillation instructions
+            assert "Select memories you found that are useful" not in system
+            assert "**Answer:**" not in system
+            return "  Two cats  "  # official: the raw completion is the answer
+
+    mem = get_baseline("mem0", {}, llm=FakeMemoryR1LLM([]),
+                       embedder=get_embedder("hash"))
+    assert mem.name == "mem0"
+    from agent_memory.baselines.memoryr1 import _Bank
+    for owner in ("Alice", "Bob"):
+        bank = _Bank(mem.embedder.dim)
+        vec = mem.embedder.embed([f"{owner} memory about cats"])[0]
+        bank.add_entry(f"id-{owner}", f"{owner} memory about cats", "t1", vec)
+        mem._banks[owner] = bank
+    pred, ids = mem.answer("How many cats does Alice have?", FakeAnswerLLM())
+    assert pred == "Two cats"  # no **Answer:** extraction
+    assert set(ids) == {"id-Alice", "id-Bob"}
+
+
 def test_longmemeval_judge_templates():
     p = longmemeval_judge_prompt("temporal-reasoning", "q", "a", "r")
     assert "off-by-one" in p

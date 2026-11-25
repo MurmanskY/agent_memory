@@ -351,6 +351,31 @@ class AMemMemory(BaseMemory):
 
     # --------------------------------------------------------------- maintain
 
+    def save(self, path) -> None:
+        """Persist the full memory state (notes + index) for reuse."""
+        import pickle
+
+        with open(path, "wb") as f:
+            pickle.dump(
+                {
+                    "memories": self.memories,
+                    "docs": self._docs,
+                    "matrix": self._matrix,
+                    "evo_cnt": self._evo_cnt,
+                },
+                f,
+            )
+
+    def load(self, path) -> None:
+        import pickle
+
+        with open(path, "rb") as f:
+            state = pickle.load(f)
+        self.memories = state["memories"]
+        self._docs = state["docs"]
+        self._matrix = state["matrix"]
+        self._evo_cnt = state["evo_cnt"]
+
     def reset(self) -> None:
         self.memories = {}
         self._docs = []

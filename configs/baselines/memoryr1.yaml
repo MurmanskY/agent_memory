@@ -1,0 +1,18 @@
+# Memory-R1 baseline (papers/MemoryR1.pdf; ported from yansikuan/memory-r1 eval/)
+# 复现的是论文的推理 pipeline（Memory Manager + Answer Agent，prompt 与官方 repo
+# 逐字一致）。论文的 RL 微调（PPO/GRPO, VERL, 4×H100）未包含：官方未发布 checkpoint，
+# 本实现等价于论文 Figure 5 的 "BASE"（未微调）配置。
+method: memoryr1
+top_k: 30                 # per-speaker retrieval at answer time (paper: 30×2=60)
+llm: hf                   # local Qwen3-4B-Instruct-2507 (GPU; paper used Llama-3.1-8B / Qwen2.5)
+llm_kwargs:
+  model: models/Qwen3-4B-Instruct-2507
+  max_new_tokens: 1000
+embedder: sentence_transformers
+embedder_kwargs:
+  model: models/all-MiniLM-L6-v2  # official used OpenAI text-embedding-3-small
+answer_prompt: qwen       # base | llama | qwen — Answer Agent template variant
+search_k: 5               # candidates per new fact shown to the Memory Manager (mem0 default)
+extract_max_tokens: 1000
+manager_max_tokens: 2048  # official: 2048
+answer_max_tokens: 2048   # official: 2048

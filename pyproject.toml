@@ -16,7 +16,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=7.4"]
-bench = ["pyarrow>=14"]            # MemoryAgentBench parquet loading
+bench = ["pyarrow>=14", "nltk>=3.8"]  # MemoryAgentBench parquet + LoCoMo BLEU-1
 st = ["sentence-transformers>=2.2"]  # all-MiniLM-L6-v2 embedder (paper setting)
 
 [tool.setuptools.packages.find]

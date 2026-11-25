@@ -48,6 +48,23 @@ class Benchmark(ABC):
     @abstractmethod
     def qa_samples(self, conv_id: str) -> list[QASample]: ...
 
+    def format_turn(self, turn: Turn) -> str:
+        """How a dialogue turn is written into memory. Override per benchmark."""
+        return f"{turn.speaker}: {turn.text}"
+
+    def retrieve_query(self, sample: QASample, llm=None) -> str:
+        """The query sent to memory.retrieve for this QA sample."""
+        return sample.question
+
+    def qa_prompt(self, sample: QASample, context: str) -> str | None:
+        """Benchmark-specific QA prompt over retrieved `context`.
+
+        Return None to use the generic system prompt. When a prompt is
+        returned, the runner asks for a JSON object and reads its "answer"
+        field (falling back to the raw response).
+        """
+        return None
+
     def score_sample(self, sample: QASample, pred: str, llm=None) -> dict | None:
         """Benchmark-specific scoring. Return None to use default F1/EM.
 

@@ -43,6 +43,9 @@ def main() -> None:
                    help="max questions per conversation")
     p.add_argument("--llm-judge", action="store_true",
                    help="add generic LLM-as-judge score (QA benchmarks only)")
+    p.add_argument("--cache-dir", default=None,
+                   help="cache per-conversation memory state (amem supports save/load); "
+                        "later runs skip ingestion")
     p.add_argument("--source", default=None,
                    help="memoryagentbench only: keep one metadata.source subset")
     p.add_argument("--chunk-size", type=int, default=4096,
@@ -86,6 +89,7 @@ def main() -> None:
         max_questions_per_conv=args.max_questions,
         use_llm_judge=args.llm_judge,
         output_path=args.output,
+        cache_dir=args.cache_dir,
     )
     print(json.dumps(summary, indent=2, ensure_ascii=False))
 

@@ -6,6 +6,12 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
 
+DEFAULT_QA_SYSTEM_PROMPT = (
+    "You are answering questions about a past conversation. Use ONLY the "
+    "retrieved memories below. If the memories do not contain the answer, "
+    'say "I don\'t know". Answer as concisely as possible.'
+)
+
 
 @dataclass
 class MemoryItem:
@@ -54,6 +60,22 @@ class BaseMemory(ABC):
     def render(self, item: MemoryItem) -> str:
         """How a retrieved memory is presented in the QA prompt."""
         return item.content
+
+    def answer(self, question: str, llm, top_k: int = 10) -> tuple[str, list[str]]:
+        """Answer a question over the stored memories.
+
+        Default: retrieve top-k, render them into a generic QA prompt. Methods
+        with a dedicated answering stage (e.g. Memory-R1's Answer Agent)
+        override this.
+        """
+        retrieved = self.retrieve(question, top_k=top_k)
+        context = (
+            "\n".join(f"- {self.render(m)}" for m in retrieved) or "(no memories)"
+        )
+        pred = llm.chat(
+            DEFAULT_QA_SYSTEM_PROMPT, f"Memories:\n{context}\n\nQuestion: {question}"
+        )
+        return pred, [m.id for m in retrieved]
 
     def __len__(self) -> int:
         return 0

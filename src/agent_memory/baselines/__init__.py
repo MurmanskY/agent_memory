@@ -7,6 +7,8 @@ from .rag import RAGMemory
 from .memgpt import MemGPTMemory
 from .amem import AMemMemory
 from .langmem import LangMemMemory
+from .mem0 import Mem0Memory
+from .memoryr1 import MemoryR1Memory
 
 BASELINES: dict[str, type[BaseMemory]] = {
     "full_context": FullContextMemory,
@@ -14,6 +16,8 @@ BASELINES: dict[str, type[BaseMemory]] = {
     "memgpt": MemGPTMemory,
     "amem": AMemMemory,
     "langmem": LangMemMemory,
+    "mem0": Mem0Memory,
+    "memoryr1": MemoryR1Memory,
 }
 
 
@@ -30,6 +34,10 @@ def get_baseline(
         return cls(config, embedder=embedder)
     if cls is AMemMemory:
         return cls(config, llm=llm, embedder=embedder)
+    if cls is MemoryR1Memory:
+        return cls(config, llm=llm, embedder=embedder)
+    if cls is Mem0Memory:
+        return cls(config, llm=llm, embedder=embedder)
     return cls(config)
 
 
@@ -41,4 +49,6 @@ __all__ = [
     "MemGPTMemory",
     "AMemMemory",
     "LangMemMemory",
+    "Mem0Memory",
+    "MemoryR1Memory",
 ]

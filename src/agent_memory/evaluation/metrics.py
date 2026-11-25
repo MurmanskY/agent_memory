@@ -40,6 +40,42 @@ def metric_max_over_golds(metric_fn, pred: str, golds) -> float:
     return max(scores) if scores else 0.0
 
 
+def bleu1(pred: str, gold: str) -> float:
+    """Sentence-level BLEU-1 with nltk smoothing (as in the A-MEM eval code)."""
+    try:
+        from nltk.translate.bleu_score import SmoothingFunction, sentence_bleu
+
+        return float(
+            sentence_bleu(
+                [gold.split()],
+                pred.split(),
+                weights=(1.0,),
+                smoothing_function=SmoothingFunction().method1,
+            )
+        )
+    except ImportError:
+        # unigram precision with brevity penalty, no smoothing
+        pred_toks, gold_toks = pred.split(), gold.split()
+        if not pred_toks or not gold_toks:
+            return 0.0
+        common = set(pred_toks) & set(gold_toks)
+        prec = sum(min(pred_toks.count(t), gold_toks.count(t)) for t in common) / len(pred_toks)
+        bp = min(1.0, len(pred_toks) / len(gold_toks))
+        return bp * prec
+
+
+def f1_set(pred: str, gold: str) -> float:
+    """Set-based token F1 (A-MEM eval code) — tokens deduplicated before P/R."""
+    pred_toks, gold_toks = set(_normalize(pred)), set(_normalize(gold))
+    if not pred_toks or not gold_toks:
+        return 0.0
+    common = pred_toks & gold_toks
+    if not common:
+        return 0.0
+    p, r = len(common) / len(pred_toks), len(common) / len(gold_toks)
+    return 2 * p * r / (p + r)
+
+
 def exact_match(pred: str, gold: str) -> float:
     return float(" ".join(_normalize(pred)) == " ".join(_normalize(gold)))
 

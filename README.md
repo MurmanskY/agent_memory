@@ -4,7 +4,11 @@
 流程下，对比主流 memory baseline（RAG、A-MEM 等）与我们自己的方法（`methods/ours`）。
 
 参考论文：[`papers/AMem.pdf`](papers/AMem.pdf) — *A-Mem: Agentic Memory for LLM Agents*
-（Zettelkasten 风格的动态记忆组织），已在 `baselines/amem.py` 复现。
+（Zettelkasten 风格的动态记忆组织），已在 `baselines/amem.py` 复现；
+[`papers/MemoryR1.pdf`](papers/MemoryR1.pdf) — *Memory-R1: RL-enhanced memory
+management*（Memory Manager + Answer Agent），已在 `baselines/memoryr1.py` 复现推理流程；
+[`papers/Mem0.pdf`](papers/Mem0.pdf) — *Mem0: Scalable Long-Term Memory*，
+已在 `baselines/mem0.py` 复现（写入侧与 Memory-R1 共用，作答侧为官方 top-10 + 基础 prompt）。
 
 ## 目录结构
 
@@ -58,11 +62,14 @@ CUDA_VISIBLE_DEVICES=0 python scripts/run_experiment.py \
 | `full_context` | ✅ | 不做记忆管理，全部历史塞进上下文（上限截断） |
 | `rag` | ✅ | Naive RAG：embedding 余弦相似度 top-k 检索 |
 | `amem` | ✅ | A-MEM 复现（`baselines/amem.py`）：note 构建（LLM 生成 keywords/context/tags）→ 邻居链接 + 记忆演化（单次 LLM 决策 strengthen / update_neighbor）→ top-k 检索 + 链接扩展。prompt 与官方 repo 逐字一致，默认 evo_threshold=100、k_neighbors=5 |
+| `mem0` | ✅ | Mem0 复现（`baselines/mem0.py`，口径对齐官方 eval @v0.1.100）：写入侧与 Memory-R1 共用（mem0 式 fact 抽取 → ADD/UPDATE/DELETE/NONE Manager，按 speaker 双记忆库）；作答侧为论文口径：每 speaker top-10 检索 + Appendix A 基础 answer prompt（无 distillation、无 `**Answer:**` 指令），原始输出即答案。Mem0g（graph 变体）未实现 |
+| `memoryr1` | ✅ | Memory-R1 推理 pipeline 复现（`baselines/memoryr1.py`，prompt 与官方 repo `yansikuan/memory-r1` 逐字一致）：按 speaker 双记忆库；每个 turn 经 mem0 式 fact 抽取 → Memory Manager 决策 ADD/UPDATE/DELETE/NONE（search_k=5）；Answer Agent 每 speaker 检索 top-30（共 60 条）+ Memory Distillation（先输出选中的记忆，再在 `**Answer:**` 后给 ≤5-6 词答案）。注意：论文核心是 RL 微调（PPO/GRPO，VERL，4×H100），官方未发布 checkpoint，本复现等价于论文 Figure 5 的 "BASE"（未微调）配置；训练脚本不在本仓库范围内 |
 | `memgpt` | 🚧 骨架 | MemGPT（分页式记忆层级），待实现 |
 | `langmem` | 🚧 骨架 | LangGraph LangMem，待封装 |
 
 新增 baseline：继承 `agent_memory.core.base.BaseMemory`，实现 `add/retrieve/reset`
-（可选 `render` 自定义检索结果在 QA prompt 中的呈现），并在
+（可选 `render` 自定义检索结果在 QA prompt 中的呈现；可选覆写 `answer` 自定义整个
+作答流程，如 Memory-R1 的 Answer Agent），并在
 `agent_memory/baselines/__init__.py` 的 `BASELINES` 注册。
 
 ## Benchmarks
@@ -93,9 +100,30 @@ python scripts/run_experiment.py --benchmark gatemem \
 
 注意：GateMem 的 LLM-judge（论文主指标）暂未接入，当前为官方规则辅助打分。
 
+## 实验结果
+
+### A-MEM 复现（LoCoMo 全量 1986 题，Qwen3-4B-Instruct-2507 + all-MiniLM-L6-v2，~19h）
+
+评测协议与官方代码对齐（关键词检索、分类别 prompt、对抗题二选一、set-F1/BLEU-1）：
+
+| 类别 | n | F1 | BLEU-1 | 论文 Qwen2.5-3B (F1) | 论文 GPT-4o-mini (F1) |
+|---|---|---|---|---|---|
+| Multi-hop | 282 | 0.253 | 0.119 | 0.126 | 0.270 |
+| Temporal | 321 | 0.331 | 0.203 | 0.276 | 0.459 |
+| Open-domain | 96 | 0.087 | 0.033 | 0.071 | 0.121 |
+| Single-hop | 841 | 0.324 | 0.218 | 0.172 | 0.447 |
+| Adversarial | 446 | 0.747* | 0.745 | 0.279 | 0.500 |
+| **总体** | 1986 | **0.398** | **0.311** | — | — |
+
+\* 对抗题按修正口径以 "Not mentioned in the conversation" 为 gold；按论文 legacy 口径
+f1_legacy = 0.281（与论文 Qwen2.5-3B 的 0.279 一致），正确拒答率 adversarial_correct = 0.738。
+
+产物：`results/amem_locomo_qwen3_v2.jsonl`（逐题结果）、`results/memory_cache/`
+（10 条对话的 A-MEM 记忆缓存，调评测参数可分钟级复跑）。
+
 ## Roadmap
 
-1. 用 GPT-4o-mini + all-MiniLM-L6-v2 跑 LoCoMo，对齐 A-MEM 论文 Table 1 的数字；
-2. 实现 `methods/ours`（接口已就位，可直接对比）；
-3. GateMem 接入 LLM-judge；MemoryAgentBench 补 recsys (Recall@5) 与 infbench (LLM-F1) 子集；
-4. 成本/延迟统计（token usage、检索耗时）纳入统一报告。
+1. ~~用本地开源模型跑 LoCoMo，对齐 A-MEM 论文结果~~（已完成，见上）
+2. 实现 `methods/ours`（接口已就位，可直接对比）
+3. GateMem 接入 LLM-judge；MemoryAgentBench 补 recsys (Recall@5) 与 infbench (LLM-F1) 子集
+4. 成本/延迟统计（token usage、检索耗时）纳入统一报告

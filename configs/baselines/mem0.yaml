@@ -1,0 +1,17 @@
+# Mem0 baseline (papers/Mem0.pdf; ported from mem0ai/mem0@v0.1.100 evaluation/)
+# 写入侧与 Memory-R1 共用（fact 抽取 → ADD/UPDATE/DELETE/NONE Manager），
+# 作答侧为论文口径：每 speaker top-10 检索 + 基础 answer prompt（无 distillation），
+# 原始输出即答案。Mem0g（graph 变体）未包含。
+method: mem0
+top_k: 10                 # per-speaker retrieval at answer time (official default)
+llm: hf                   # local Qwen3-4B-Instruct-2507 (GPU; paper used gpt-4o-mini)
+llm_kwargs:
+  model: models/Qwen3-4B-Instruct-2507
+  max_new_tokens: 1000
+embedder: sentence_transformers
+embedder_kwargs:
+  model: models/all-MiniLM-L6-v2  # official used OpenAI text-embedding-3-small
+search_k: 5               # candidates per new fact shown to the memory manager
+extract_max_tokens: 1000
+manager_max_tokens: 2048
+answer_max_tokens: 2048
