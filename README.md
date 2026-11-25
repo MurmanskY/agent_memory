@@ -121,6 +121,25 @@ f1_legacy = 0.281（与论文 Qwen2.5-3B 的 0.279 一致），正确拒答率 a
 产物：`results/amem_locomo_qwen3_v2.jsonl`（逐题结果）、`results/memory_cache/`
 （10 条对话的 A-MEM 记忆缓存，调评测参数可分钟级复跑）。
 
+### SeCom 复现（LoCoMo 全量 1986 题，同一评测协议，~53min）
+
+Qwen3-4B 分割 + LLMLingua-2(0.75) 去噪 + BM25 检索 + 4k token 预算
+（`baselines/secom.py`，clean-room 复现）：
+
+| 类别 | F1 | BLEU-1 | A-MEM (F1) | A-MEM (BLEU-1) |
+|---|---|---|---|---|
+| Multi-hop | 0.165 | 0.061 | **0.253** | **0.119** |
+| Temporal | 0.221 | 0.097 | **0.331** | **0.203** |
+| Open-domain | 0.087 | 0.043 | 0.087 | 0.033 |
+| Single-hop | 0.227 | 0.134 | **0.324** | **0.218** |
+| Adversarial | 0.728 | 0.718 | 0.747 | 0.745 |
+| **总体** | 0.323 | 0.244 | **0.398** | **0.311** |
+
+对抗题正确拒答率：SeCom 0.720 vs A-MEM 0.738。
+结论：A-MEM 在需要跨记忆推理的类别（Multi-hop/Temporal/Single-hop）上明显占优，
+与 A-MEM 论文的核心结论一致；SeCom 构建成本则低得多（53min vs 19h），
+与论文 Table 5 的效率结论一致。
+
 ## Roadmap
 
 1. ~~用本地开源模型跑 LoCoMo，对齐 A-MEM 论文结果~~（已完成，见上）
