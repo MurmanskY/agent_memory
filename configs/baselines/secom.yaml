@@ -1,0 +1,14 @@
+# SECOM baseline (papers/SeCom.pdf; clean-room from the paper, no official code)
+method: secom
+top_k: 10                 # max segments per query (LOCOMO: ~10 segments)
+budget_tokens: 4000       # context budget in ~tokens (paper Table 1: 4k on LOCOMO)
+retriever: bm25           # bm25 (paper's best on LOCOMO) | mpnet
+llm: hf                   # segmentation model (paper: GPT-4; Mistral-7B variant
+llm_kwargs:               # shows a lightweight model works -> local Qwen3-4B)
+  model: models/Qwen3-4B-Instruct-2507
+  max_new_tokens: 2000
+embedder: sentence_transformers   # only used when retriever: mpnet
+embedder_kwargs:
+  model: models/multi-qa-mpnet-base-dot-v1
+compressor: models/llmlingua-2-xlm-roberta-large   # LLMLingua-2 denoiser
+compression_rate: 0.75    # paper: 75%

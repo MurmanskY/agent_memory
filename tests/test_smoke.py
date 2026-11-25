@@ -331,3 +331,44 @@ def test_memoryagentbench_loader(tmp_path):
     assert samples[0].question == "What is the cat's name?"
     assert bench.score_sample(samples[0], "It is Mochi.") == {"accuracy": 1.0}
     assert bench.score_sample(samples[0], "It is Luna.") == {"accuracy": 0.0}
+
+
+class FakeSegLLM:
+    """Splits every session into 2-turn segments."""
+
+    def chat(self, system: str, user: str, **kwargs) -> str:
+        import re as _re
+        n = len(_re.findall(r"\[Turn \d+\]:", user))
+        lines = []
+        for s in range(0, n, 2):
+            e = min(s + 1, n - 1)
+            lines.append({"segment_id": len(lines), "start_turn_number": s,
+                          "end_turn_number": e, "num_turns": e - s + 1})
+        return ("<segmentation>\n"
+                + "\n".join(json.dumps(l) for l in lines)
+                + "\n</segmentation>")
+
+
+def test_secom_segments_and_retrieves():
+    mem = get_baseline("secom", {"retriever": "bm25", "budget_tokens": 12},
+                       llm=FakeSegLLM(), embedder=get_embedder("hash"))
+    for i, text in enumerate([
+            "Alice: I adopted a cat named Mochi.",
+            "Bob: Cute! How old is Mochi?",
+            "Alice: I went hiking in the Alps.",
+            "Bob: Was the scenery good?"]):
+        mem.add(text, metadata={"session_id": "s1", "timestamp": "t0"})
+    mem.retrieve("hiking Alps", top_k=2)  # triggers flush of the pending session
+    assert len(mem) == 2  # 4 turns -> two 2-turn segments
+    hits = mem.retrieve("hiking Alps", top_k=2)
+    assert len(hits) == 1  # budget only fits relevant ranking first
+    assert "hiking" in hits[0].content
+    assert "timestamp" in hits[0].metadata
+
+    # new session boundary triggers flush of the previous one
+    mem.add("Alice: new topic here.", metadata={"session_id": "s2", "timestamp": "t1"})
+    mem.retrieve("new topic")
+    assert len(mem) == 3
+
+    mem.reset()
+    assert len(mem) == 0
