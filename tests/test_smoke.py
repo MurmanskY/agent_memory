@@ -414,3 +414,34 @@ def test_mem0_write_path_and_retrieve():
         assert len(mem) == 0
         mem.load(p)
         assert len(mem) >= 2
+
+
+def test_memoryr1_answer_agent_protocol():
+    class FakeAnswerLLM(FakeMem0LLM):
+        def chat(self, system: str, user: str, **kwargs) -> str:
+            if "intelligent memory assistant" in system:
+                return "Some distilled reasoning. **Answer:** Mochi"
+            return super().chat(system, user, **kwargs)
+
+    llm = FakeAnswerLLM()
+    mem = get_baseline("memoryr1", {}, llm=llm, embedder=get_embedder("hash"))
+    mem.add("Speaker Alicesays : I adopted a cat named Mochi.",
+            metadata={"timestamp": "t0"})
+    pred, ids = mem.answer("What is the cat's name?", llm, top_k=5)
+    assert pred == "Mochi"  # extracted after "**Answer:**"
+    assert ids
+
+    # the runner honors use_memory_answer
+    data = [{"sample_id": 0,
+             "conversation": {"session_1_date_time": "t0", "session_1": [
+                 {"speaker": "Alice", "text": "I adopted a cat named Mochi."}]},
+             "qa": [{"question": "What is the cat's name?", "answer": "Mochi",
+                     "category": "4"}]}]
+    import tempfile, os
+    with tempfile.TemporaryDirectory() as d:
+        f = os.path.join(d, "locomo.json")
+        open(f, "w").write(json.dumps(data))
+        bench = LoCoMoBenchmark(f)
+        summary = run_benchmark(bench, mem, llm, use_memory_answer=True)
+        assert summary["n_questions"] == 1
+        assert summary["f1"] == 1.0

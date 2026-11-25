@@ -48,6 +48,7 @@ def run_benchmark(
     use_llm_judge: bool = False,
     output_path: str | Path | None = None,
     cache_dir: str | Path | None = None,
+    use_memory_answer: bool = False,
 ) -> dict[str, Any]:
     """Ingest each conversation into `memory`, then QA-evaluate it.
 
@@ -57,6 +58,11 @@ def run_benchmark(
     `cache_dir`: if set and the memory implements save()/load(), the memory
     state after ingesting each conversation is cached, so later runs (e.g.
     with a different QA protocol) skip the expensive ingestion phase.
+
+    `use_memory_answer`: if the memory implements its own `answer(question,
+    llm, top_k)` protocol (mem0 / memoryr1), use it instead of the generic
+    retrieve+benchmark-prompt path. `top_k` is passed through to the method
+    (for memoryr1: per-speaker candidates).
     """
     records: list[dict[str, Any]] = []
     out_f = open(output_path, "w") if output_path else None
@@ -96,7 +102,12 @@ def run_benchmark(
             samples = samples[:max_questions_per_conv]
 
         for sample in samples:
-            pred, retrieved_ids = answer_question(memory, llm, benchmark, sample, top_k)
+            if use_memory_answer and hasattr(memory, "answer"):
+                pred, retrieved_ids = memory.answer(sample.question, llm, top_k=top_k)
+            else:
+                pred, retrieved_ids = answer_question(
+                    memory, llm, benchmark, sample, top_k
+                )
             record: dict[str, Any] = {
                 "question_id": sample.question_id,
                 "conv_id": sample.conv_id,

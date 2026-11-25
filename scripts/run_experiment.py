@@ -46,6 +46,9 @@ def main() -> None:
     p.add_argument("--cache-dir", default=None,
                    help="cache per-conversation memory state (amem supports save/load); "
                         "later runs skip ingestion")
+    p.add_argument("--memory-answer", action="store_true",
+                   help="use the memory system's own answer() protocol "
+                        "(mem0 / memoryr1) instead of the benchmark QA prompts")
     p.add_argument("--source", default=None,
                    help="memoryagentbench only: keep one metadata.source subset")
     p.add_argument("--chunk-size", type=int, default=4096,
@@ -90,6 +93,7 @@ def main() -> None:
         use_llm_judge=args.llm_judge,
         output_path=args.output,
         cache_dir=args.cache_dir,
+        use_memory_answer=args.memory_answer,
     )
     print(json.dumps(summary, indent=2, ensure_ascii=False))
 
