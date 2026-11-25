@@ -7,12 +7,14 @@ from .locomoco import LoCoMoBenchmark
 from .longmemeval import LongMemEvalBenchmark
 from .memoryagentbench import MemoryAgentBenchBenchmark
 from .gatemem import GateMemBenchmark
+from .hotpotqa import HotpotQABenchmark
 
 BENCHMARKS = {
     "locomoco": LoCoMoBenchmark,
     "longmemeval": LongMemEvalBenchmark,
     "memoryagentbench": MemoryAgentBenchBenchmark,
     "gatemem": GateMemBenchmark,
+    "hotpotqa": HotpotQABenchmark,
 }
 
 

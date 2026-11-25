@@ -1,0 +1,16 @@
+# AgeMem baseline (papers/AgeMen.pdf; ported from y1y5/AgeMem, no-RL variant)
+# 三阶段渐进 RL（step-wise GRPO）未包含：官方未发布 checkpoint，此处为
+# 推理框架复现（6 个记忆工具 + ReAct 循环），对应论文的 w/o-RL 消融口径。
+method: agemem
+llm: hf                   # policy model（论文: Qwen2.5-7B-Instruct + RL）
+llm_kwargs:
+  model: models/Qwen3-4B-Instruct-2507
+  max_new_tokens: 2048
+embedder: sentence_transformers   # LTM 向量库（官方: DashScope text-embedding-v4）
+embedder_kwargs:
+  model: models/all-MiniLM-L6-v2
+stage1_max_rounds: 5      # casual chat（存事实到 LTM）
+stage3_max_rounds: 5      # formal QA
+max_context_tokens: 8192
+use_context_tools: true   # Summary/Clear/Retrieve 三个上下文工具
+clear_threshold: 0.6      # Clear_context 的 LLM 相似度阈值（官方 workflow 口径）

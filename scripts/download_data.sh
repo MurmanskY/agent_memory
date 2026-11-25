@@ -54,3 +54,11 @@ fi
 
 echo "Done. Files:"
 ls -lhR data/ | head -40
+
+# --- HotpotQA (AgeMem 评测) ---
+# Source: HF hotpotqa/hotpot_qa (distractor validation, 7405 题)
+if [ ! -f data/hotpotqa/distractor_validation.parquet ]; then
+  mkdir -p data/hotpotqa
+  curl -L -o data/hotpotqa/distractor_validation.parquet \
+    "https://huggingface.co/datasets/hotpotqa/hotpot_qa/resolve/main/distractor/validation-00000-of-00001.parquet"
+fi

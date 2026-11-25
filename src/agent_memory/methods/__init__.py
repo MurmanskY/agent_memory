@@ -15,7 +15,13 @@ def get_method(
     config: dict | None = None,
     llm: LLMClient | None = None,
     embedder: Embedder | None = None,
-) -> BaseMemory:
+):
+    if name == "agemem":
+        # agent-style method (not a BaseMemory): has run_task(), driven by
+        # benchmarks with a custom run() (e.g. hotpotqa)
+        from ..baselines.agemem import AgeMemAgent
+
+        return AgeMemAgent(config, llm=llm, embedder=embedder)
     if name not in METHODS:
         raise ValueError(f"unknown method: {name} (have: {sorted(METHODS)})")
     cls = METHODS[name]

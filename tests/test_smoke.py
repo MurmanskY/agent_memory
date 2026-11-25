@@ -445,3 +445,50 @@ def test_memoryr1_answer_agent_protocol():
         summary = run_benchmark(bench, mem, llm, use_memory_answer=True)
         assert summary["n_questions"] == 1
         assert summary["f1"] == 1.0
+
+
+def test_agemem_agent_tool_loop():
+    from agent_memory.baselines.agemem import AgeMemAgent
+    from agent_memory.baselines.agemem.agent import parse_tool_calls, parse_answer
+
+    # parsing
+    calls = parse_tool_calls(
+        '<think>x</think><tool_call>[{"name": "Add_memory", "arguments": {"content": "cats are cute"}}]</tool_call>')
+    assert calls == [{"name": "Add_memory", "arguments": {"content": "cats are cute"}}]
+    assert parse_answer("<answer>42</answer>") == "42"
+    assert parse_answer("no tags") is None
+
+    class FakeAgentLLM:
+        def __init__(self):
+            self.n_qa = 0
+
+        def chat(self, system, user, **kwargs):
+            # stage 3: retrieve once, then answer (check before stage-1 marker:
+            # the stage-3 prompt still contains the stage-1 conversation)
+            if "Which city is the Eiffel Tower in?" in user:
+                self.n_qa += 1
+                if self.n_qa == 1:
+                    return ('<think>Check memory.</think><tool_call>'
+                            '[{"name": "Retrieve_memory", "arguments": {"query": "Eiffel Tower", "top_k": 3}}]'
+                            '</tool_call>')
+                return "<think>Memory says Paris.</think><answer>Paris</answer>"
+            if "Text 1" in user:  # similarity prompt
+                return "0.0"
+            if "summarization" in user.lower():
+                return "summary text"
+            if "Just chatting about" in user:
+                return ('<think>Store facts.</think><tool_call>'
+                        '[{"name": "Add_memory", "arguments": {"content": "The Eiffel Tower is in Paris."}}]'
+                        '</tool_call>')
+            return "<answer>unknown</answer>"
+
+    agent = AgeMemAgent({}, llm=FakeAgentLLM(), embedder=get_embedder("hash"))
+    result = agent.run_task(
+        "Which city is the Eiffel Tower in?",
+        [("Eiffel Tower", ["The Eiffel Tower is a wrought-iron tower in Paris."])],
+    )
+    assert result["answer"] == "Paris"
+    assert result["n_memories"] >= 1  # stage-1 rounds each store the fact
+    assert result["tool_usage"].get("Retrieve_memory", 0) >= 1
+    assert result["tool_usage"].get("Add_memory", 0) >= 1
+    assert "Paris" in agent.store.contents[0]
