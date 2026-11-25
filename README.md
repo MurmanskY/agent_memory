@@ -140,6 +140,28 @@ Qwen3-4B 分割 + LLMLingua-2(0.75) 去噪 + BM25 检索 + 4k token 预算
 与 A-MEM 论文的核心结论一致；SeCom 构建成本则低得多（53min vs 19h），
 与论文 Table 5 的效率结论一致。
 
+### Mem0 复现 + 三方法子集对比（conv-26，199 题/方法，快速验证协议）
+
+Mem0（`baselines/mem0.py` + `memoryr1.py` 共享写入路径）：事实抽取 →
+ADD/UPDATE/DELETE/NONE 记忆管理器 → 双 speaker bank，prompt 与官方
+mem0ai/mem0@v0.1.100 逐字一致；Mem0g（图变体）未包含。
+
+**快速验证协议**：`--max-conversations 1`（conv-26，199 题五类齐全）。
+三个方法在该子集的记忆缓存均已建好（`results/memory_cache/`），
+迭代重跑分钟级；新方法首轮 ingest：SeCom ~4min、Mem0 ~1.5h、A-MEM ~2h。
+
+| 类别 | A-MEM F1 | SeCom F1 | Mem0 F1 |
+|---|---|---|---|
+| Multi-hop | **0.223** | 0.137 | 0.101 |
+| Temporal | **0.355** | 0.282 | 0.206 |
+| Open-domain | **0.130** | 0.119 | 0.078 |
+| Single-hop | **0.250** | 0.229 | 0.118 |
+| Adversarial | 0.623 | 0.676 | **0.808** |
+| **总体** | **0.345** | 0.323 | 0.292 |
+
+对抗题正确拒答率：Mem0 0.787 > SeCom 0.660 > A-MEM 0.617。
+A-MEM 强在事实回忆/跨记忆推理，Mem0 强在抗诱导（事实级精炼记忆噪声少）。
+
 ## Roadmap
 
 1. ~~用本地开源模型跑 LoCoMo，对齐 A-MEM 论文结果~~（已完成，见上）
