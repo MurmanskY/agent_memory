@@ -57,6 +57,8 @@ class TransformersLLM:
 
     def __init__(self, model: str, max_new_tokens: int = 512,
                  device_map: str = "auto"):
+        import threading
+
         import torch
         from transformers import AutoModelForCausalLM, AutoTokenizer
 
@@ -66,6 +68,9 @@ class TransformersLLM:
         )
         self._model.eval()
         self.max_new_tokens = max_new_tokens
+        # concurrent ingest (mem0 per-speaker banks) calls chat() from
+        # multiple threads; generation on one model instance must be serialized
+        self._lock = threading.Lock()
 
     def chat(self, system: str, user: str, **kwargs) -> str:
         import torch
@@ -77,16 +82,17 @@ class TransformersLLM:
         text = self._tok.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=True
         )
-        inputs = self._tok(text, return_tensors="pt").to(self._model.device)
-        with torch.inference_mode():
-            out = self._model.generate(
-                **inputs,
-                max_new_tokens=int(kwargs.get("max_tokens", self.max_new_tokens)),
-                do_sample=False,
-                pad_token_id=self._tok.eos_token_id,
-            )
-        gen = out[0][inputs["input_ids"].shape[1]:]
-        return self._tok.decode(gen, skip_special_tokens=True)
+        with self._lock:
+            inputs = self._tok(text, return_tensors="pt").to(self._model.device)
+            with torch.inference_mode():
+                out = self._model.generate(
+                    **inputs,
+                    max_new_tokens=int(kwargs.get("max_tokens", self.max_new_tokens)),
+                    do_sample=False,
+                    pad_token_id=self._tok.eos_token_id,
+                )
+            gen = out[0][inputs["input_ids"].shape[1]:]
+            return self._tok.decode(gen, skip_special_tokens=True)
 
 
 def get_llm(name: str = "openai", **kwargs) -> LLMClient:

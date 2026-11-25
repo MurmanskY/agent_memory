@@ -372,3 +372,45 @@ def test_secom_segments_and_retrieves():
 
     mem.reset()
     assert len(mem) == 0
+
+
+class FakeMem0LLM:
+    """Fact extraction -> one fact; manager -> ADD it."""
+
+    def chat(self, system: str, user: str, **kwargs) -> str:
+        if "Personal Information Organizer" in system:
+            return json.dumps({"facts": ["User adopted a cat named Mochi"]})
+        if "smart memory manager" in user:
+            return json.dumps({"memory": [
+                {"id": "0", "text": "User adopted a cat named Mochi",
+                 "event": "ADD"}]})
+        return "Mochi"
+
+
+def test_mem0_write_path_and_retrieve():
+    mem = get_baseline("mem0", {}, llm=FakeMem0LLM(), embedder=get_embedder("hash"))
+    mem.add("Speaker Alicesays : I adopted a cat named Mochi.",
+            metadata={"timestamp": "1:56 pm on 8 May, 2023"})
+    mem.add("Speaker Bobsays : Cute! How old is Mochi?",
+            metadata={"timestamp": "1:56 pm on 8 May, 2023"})
+
+    # one bank per speaker; the fact is written into both banks
+    assert sorted(mem._banks) == ["Alice", "Bob"]
+    for bank in mem._banks.values():
+        assert len(bank) >= 1
+        assert any("Mochi" in t for t in bank.texts)
+
+    hits = mem.retrieve("cat name", top_k=2)
+    assert hits and "Mochi" in hits[0].content
+    assert hits[0].metadata["speaker"] in ("Alice", "Bob")
+    assert mem.render(hits[0]).startswith("1:56 pm on 8 May, 2023: ")
+
+    # cache round-trip
+    import tempfile, os
+    with tempfile.TemporaryDirectory() as d:
+        p = os.path.join(d, "m.pkl")
+        mem.save(p)
+        mem.reset()
+        assert len(mem) == 0
+        mem.load(p)
+        assert len(mem) >= 2

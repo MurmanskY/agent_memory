@@ -435,7 +435,10 @@ ANSWER_PROMPTS = {
     "qwen": ANSWER_PROMPT_QWEN,
 }
 
-_SPEAKER_RE = re.compile(r"^([A-Z][\w.'-]{0,39}(?: [A-Z][\w.'-]{0,39}){0,2}):\s", re.UNICODE)
+_NAME = r"[A-Z][\w.'-]{0,39}(?: [A-Z][\w.'-]{0,39}){0,2}"
+_SPEAKER_RE = re.compile(
+    rf"^(?:Speaker ({_NAME})says\s*:\s|({_NAME}):\s)", re.UNICODE
+)
 
 
 def answer_extraction(text: str) -> str:
@@ -474,7 +477,7 @@ def _split_speaker(content: str) -> tuple[str | None, str]:
     m = _SPEAKER_RE.match(content)
     if not m:
         return None, content
-    return m.group(1), content[m.end():]
+    return m.group(1) or m.group(2), content[m.end():]
 
 
 class _Bank:
@@ -738,6 +741,20 @@ class MemoryR1Memory(BaseMemory):
         return answer_extraction(raw).strip(), ids
 
     # --------------------------------------------------------------- maintain
+
+    def save(self, path) -> None:
+        import pickle
+
+        with open(path, "wb") as f:
+            pickle.dump({"banks": self._banks, "turns": self._turns}, f)
+
+    def load(self, path) -> None:
+        import pickle
+
+        with open(path, "rb") as f:
+            state = pickle.load(f)
+        self._banks = state["banks"]
+        self._turns = state["turns"]
 
     def reset(self) -> None:
         self._banks = {}
