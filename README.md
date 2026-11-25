@@ -184,6 +184,24 @@ Agent 0.285，蒸馏作答翻倍以上——印证论文 Answer Agent 的消融�
 (2) MemR1 对抗题拒答率仅 0.128（其 prompt 无拒答机制，论文也将对抗题
 排除在评测外），Mem0 抗诱导最强；(3) A-MEM 仍是多跳最强。
 
+### AgeMem 复现（no-RL 变体，HotpotQA distractor 100 题子集，~30min）
+
+AgeMem 是 agent 式方法（记忆操作作为工具调用），评测在 HotpotQA 等任务上。
+复现官方推理框架（6 个记忆工具 + ReAct 循环，prompt/schema 与 y1y5/AgeMem
+逐字一致）；RL 训练（三阶段 step-wise GRPO）未复现（无发布 checkpoint）。
+backbone 与论文一致为 Qwen3-4B 量级（Qwen3-4B-Instruct-2507）。
+
+| 指标 | 我们 (noRL, Qwen3-4B) | 论文 AgeMem-noRL (Qwen3-4B) | 论文 AgeMem+RL |
+|---|---|---|---|
+| HotpotQA J | 0.770 | 0.545* | 0.555* |
+| 工具调用/题（Retrieve/Add/Update） | 3.3 / 1.7 / 0.28 | 4.6 / 2.5 / 0.13 | 4.4 / 2.6 / 0.34 |
+
+\* 论文为 fullwiki 设定 + qwen-max 评审；我们为 distractor 设定（10 段落）+
+本地 Qwen3-4B 评审，J 的绝对值不可直接比，仅供量级参考。
+
+工具使用模式与论文 noRL 一致：Retrieve 最频繁，Summary/Filter 几乎不用，
+RL 后这些才显著上升——印证论文"RL 教会主动记忆管理"的核心结论。
+
 ## Roadmap
 
 1. ~~用本地开源模型跑 LoCoMo，对齐 A-MEM 论文结果~~（已完成，见上）
