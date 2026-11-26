@@ -492,3 +492,142 @@ def test_agemem_agent_tool_loop():
     assert result["tool_usage"].get("Retrieve_memory", 0) >= 1
     assert result["tool_usage"].get("Add_memory", 0) >= 1
     assert "Paris" in agent.store.contents[0]
+
+
+def test_trustmem_memory_tools_and_transition_rewards():
+    from agent_memory.security.trustmem.memory_core import Memory, execute_function_call
+    from agent_memory.security.trustmem.rollout import RolloutRecord, TransitionRecord
+    from agent_memory.security.trustmem.tr_grpo import (
+        assign_rewards, build_preference_pairs, compute_advantages,
+    )
+
+    memory = Memory()
+    inserted = execute_function_call(memory, "new_memory_insert", {
+        "memory_type": "semantic_memory", "content": "Alice adopted Mochi",
+    })
+    memory_id = next(iter(memory.semantic[0]))
+    assert "executed successfully" in inserted
+    updated = execute_function_call(memory, "memory_update", {
+        "memory_type": "semantic", "memory_id": memory_id,
+        "new_content": "Alice adopted Mochi and Luna",
+    })
+    assert "executed successfully" in updated
+    assert "Luna" in memory.snapshot()
+
+    records = []
+    for rollout_idx, verifier_score in enumerate((0.9, 0.2)):
+        record = RolloutRecord(0, rollout_idx, "hotpotqa")
+        record.qa_results = [("Who did Alice adopt?", "Mochi and Luna", "Mochi and Luna")]
+        transition = TransitionRecord(
+            instance_idx=0, rollout_idx=rollout_idx, chunk_idx=0,
+            prompt_ids=[1], response_ids=[2], old_logprobs=[-0.1],
+            response_text="", actions=[], pre_memory="", post_memory="",
+            chunk_text="Alice adopted Mochi and Luna", r_act=1.0,
+            r_type=1.0, r_ver=verifier_score,
+        )
+        record.transitions.append(transition)
+        records.append(record)
+    assign_rewards(records)
+    compute_advantages(records)
+    pairs = build_preference_pairs(records)
+    assert len(pairs) == 1
+    assert pairs[0][0].r_ver == 0.9
+    assert records[0].transitions[0].advantage > 0
+    assert records[1].transitions[0].advantage < 0
+
+
+def test_promem_session_memory_offline():
+    from agent_memory.baselines.promem import ProMemMemory
+
+    class FakeProMemLLM:
+        def chat(self, system, user, **kwargs):
+            if "micro-detail extractor" in user:
+                return '["Mochi", "cat"]'
+            if "structural logic analyzer" in user:
+                return "[]"
+            return "Alice adopted a cat named Mochi."
+
+    class EntailmentNLI:
+        def check_batch(self, pairs):
+            return ["entailment"] * len(pairs)
+
+    mem = ProMemMemory({}, llm=FakeProMemLLM(), embedder=get_embedder("hash"),
+                       nli=EntailmentNLI())
+    turns = [{"role": "user", "content": "I adopted a cat named Mochi.",
+              "timestamp": "2026-01-01"}]
+    extracted = mem.add_session(turns, user_name="Alice", session_id="s1",
+                                timestamp="2026-01-01")
+    assert extracted
+    assert all("Alice" in item.content for item in extracted)
+    assert mem.session_memories("s1") == extracted
+    assert mem.retrieve("Mochi", top_k=2)
+    mem.reset()
+    assert len(mem) == 0
+
+
+def _make_halumem_fixture(tmp_path):
+    user = {
+        "uuid": "u1",
+        "persona_info": "Name: Alice Example; Gender: Female;",
+        "sessions": [{
+            "start_time": "Jan 01, 2026, 10:00:00",
+            "memory_points": [{
+                "memory_content": "Alice's birth date is 1996-08-02",
+                "memory_type": "Persona Memory", "is_update": "False",
+                "original_memories": [], "importance": 0.75,
+                "memory_source": "system",
+            }],
+            "dialogue": [
+                {"role": "user", "content": "I was born on 1996-08-02.",
+                 "timestamp": "Jan 01, 2026, 10:00:00"},
+                {"role": "assistant", "content": "Thanks.",
+                 "timestamp": "Jan 01, 2026, 10:00:01"},
+            ],
+            "questions": [{
+                "question": "When was Alice born?", "answer": "1996-08-02",
+                "evidence": [{"memory_content": "Alice's birth date is 1996-08-02"}],
+                "question_type": "Basic Fact Recall",
+            }],
+        }],
+    }
+    path = tmp_path / "HaluMem-Medium.jsonl"
+    path.write_text(json.dumps(user) + "\n")
+    return path
+
+
+def test_halumem_protocol_and_aggregation(tmp_path):
+    from agent_memory.benchmarks.halumem import HaluMemBenchmark
+
+    class FakeHaluMemLLM:
+        def chat(self, system, user, **kwargs):
+            if "Memory Integrity" in user:
+                return json.dumps({"score": "2", "reasoning": "covered"})
+            if "Dialogue Memory Accuracy Evaluator" in user:
+                return json.dumps({"accuracy_score": "2",
+                                   "is_included_in_golden_memories": "true"})
+            if "evaluation expert for AI memory system question answering" in user:
+                return json.dumps({"evaluation_result": "Correct", "reasoning": "match"})
+            return "1996-08-02"
+
+    bench = HaluMemBenchmark(_make_halumem_fixture(tmp_path))
+    assert len(list(bench.conversations())) == 1
+    memory = get_baseline("full_context")
+    # Full-context has no session extraction API, so supply one for this protocol test.
+    extracted = []
+    def add_session(dialogue, user_name, session_id, timestamp):
+        for turn in dialogue:
+            memory.add(turn["content"], {"session_id": session_id,
+                                        "timestamp": turn["timestamp"]})
+        from agent_memory.core.base import MemoryItem
+        item = MemoryItem("Alice's birth date is 1996-08-02",
+                          metadata={"session_id": session_id})
+        extracted.append(item)
+        return [item]
+    memory.add_session = add_session
+    summary = bench.run(memory, FakeHaluMemLLM(), eval_mode="all")
+    assert summary["n_questions"] == 1
+    assert summary["memory_recall"] == 1.0
+    assert summary["target_memory_precision"] == 1.0
+    assert summary["memory_extraction_f1"] == 1.0
+    assert summary["qa_correct"] == 1.0
+    assert summary["n_invalid_judges"] == 0

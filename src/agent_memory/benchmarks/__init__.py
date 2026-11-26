@@ -8,6 +8,7 @@ from .longmemeval import LongMemEvalBenchmark
 from .memoryagentbench import MemoryAgentBenchBenchmark
 from .gatemem import GateMemBenchmark
 from .hotpotqa import HotpotQABenchmark
+from .halumem import HaluMemBenchmark
 
 BENCHMARKS = {
     "locomoco": LoCoMoBenchmark,
@@ -15,6 +16,7 @@ BENCHMARKS = {
     "memoryagentbench": MemoryAgentBenchBenchmark,
     "gatemem": GateMemBenchmark,
     "hotpotqa": HotpotQABenchmark,
+    "halumem": HaluMemBenchmark,
 }
 
 
@@ -32,4 +34,5 @@ __all__ = [
     "LongMemEvalBenchmark",
     "MemoryAgentBenchBenchmark",
     "GateMemBenchmark",
+    "HaluMemBenchmark",
 ]

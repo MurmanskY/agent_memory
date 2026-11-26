@@ -10,6 +10,7 @@ from .secom import SeComMemory
 from .langmem import LangMemMemory
 from .mem0 import Mem0Memory
 from .memoryr1 import MemoryR1Memory
+from .promem import ProMemMemory
 
 BASELINES: dict[str, type[BaseMemory]] = {
     "full_context": FullContextMemory,
@@ -20,6 +21,7 @@ BASELINES: dict[str, type[BaseMemory]] = {
     "langmem": LangMemMemory,
     "mem0": Mem0Memory,
     "memoryr1": MemoryR1Memory,
+    "promem": ProMemMemory,
 }
 
 
@@ -42,6 +44,8 @@ def get_baseline(
         return cls(config, llm=llm, embedder=embedder)
     if cls is Mem0Memory:
         return cls(config, llm=llm, embedder=embedder)
+    if cls is ProMemMemory:
+        return cls(config, llm=llm, embedder=embedder)
     return cls(config)
 
 
@@ -56,4 +60,5 @@ __all__ = [
     "LangMemMemory",
     "Mem0Memory",
     "MemoryR1Memory",
+    "ProMemMemory",
 ]

@@ -1,14 +1,18 @@
 # Agent Memory Lab
 
-面向 LLM Agent 长期记忆（long-term memory）的研究代码库。目标是在统一的接口与评测
-流程下，对比主流 memory baseline（RAG、A-MEM 等）与我们自己的方法（`methods/ours`）。
+面向 LLM Agent 长期记忆（long-term memory）的研究代码库，后续重点关注**记忆系统安全与可信性**：
+记忆幻觉、遗漏/污染、错误更新、隐私越权与主动遗忘。目标是在统一接口与评测流程下，
+对比主流 memory baseline（RAG、A-MEM 等）、安全记忆方法（TrustMem、ProMem）与我们自己的方法（`methods/ours`）。
 
 参考论文：[`papers/AMem.pdf`](papers/AMem.pdf) — *A-Mem: Agentic Memory for LLM Agents*
 （Zettelkasten 风格的动态记忆组织），已在 `baselines/amem.py` 复现；
 [`papers/MemoryR1.pdf`](papers/MemoryR1.pdf) — *Memory-R1: RL-enhanced memory
 management*（Memory Manager + Answer Agent），已在 `baselines/memoryr1.py` 复现推理流程；
 [`papers/Mem0.pdf`](papers/Mem0.pdf) — *Mem0: Scalable Long-Term Memory*，
-已在 `baselines/mem0.py` 复现（写入侧与 Memory-R1 共用，作答侧为官方 top-10 + 基础 prompt）。
+已在 `baselines/mem0.py` 复现（写入侧与 Memory-R1 共用，作答侧为官方 top-10 + 基础 prompt）；
+[`papers/TrustMem.pdf`](papers/TrustMem.pdf) — 可信记忆转移验证与 Transition-Ranked GRPO；
+[`papers/ProMem.pdf`](papers/ProMem.pdf) — 主动多粒度记忆抽取与 NLI 幻觉纯化；
+[`papers/HaluMem.pdf`](papers/HaluMem.pdf) — 操作级记忆幻觉评测。
 
 ## 目录结构
 
@@ -20,17 +24,22 @@ management*（Memory Manager + Answer Agent），已在 `baselines/memoryr1.py` 
 │   ├── locomoco/            # LoCoMo
 │   ├── longmemeval/         # LongMemEval
 │   ├── memoryagentbench/    # MemoryAgentBench (parquet)
-│   └── gatemem/             # GateMem 四个 domain
+│   ├── gatemem/             # GateMem 四个 domain（隐私/删除安全）
+│   ├── halumem/             # HaluMem Medium/Long（幻觉/遗漏/更新安全）
+│   └── memalpha/            # TrustMem 训练与验证池
 ├── results/                 # 实验输出（不入库）
 ├── scripts/
-│   ├── run_experiment.py    # 统一实验入口
+│   ├── run_experiment.py    # 统一实验入口（含 HaluMem / ProMem）
+│   ├── train_trustmem.py    # TrustMem TR-GRPO 分阶段训练
+│   ├── eval_trustmem.py     # 记忆转移错误率 + 任务效用评测
 │   └── download_data.sh     # 数据集下载
 ├── src/agent_memory/
 │   ├── core/                # 记忆基类、数据结构、LLM/Embedding 客户端
-│   ├── baselines/           # full_context / rag / amem / memgpt / langmem
+│   ├── baselines/           # full_context / rag / amem / mem0 / promem 等
+│   ├── security/trustmem/   # TrustMem 执行器、Verifier、奖励与 TR-GRPO
 │   ├── methods/ours/        # 我们的方法（框架占位）
-│   ├── benchmarks/          # LoCoMo、LongMemEval、MemoryAgentBench、GateMem
-│   └── evaluation/          # 指标 (F1/EM/LLM-judge/官方模板) 与 runner
+│   ├── benchmarks/          # 通用 QA + HaluMem / GateMem 安全评测
+│   └── evaluation/          # 指标与官方 judge 模板
 └── tests/
 ```
 
@@ -38,6 +47,8 @@ management*（Memory Manager + Answer Agent），已在 `baselines/memoryr1.py` 
 
 ```bash
 pip install -e ".[dev,bench,st]"     # bench: pyarrow; st: sentence-transformers
+pip install -e ".[security]"         # ProMem：Transformers + scikit-learn
+# TrustMem 训练另需：pip install -e ".[trustmem]"（vLLM）
 bash scripts/download_data.sh        # 下载全部数据集到 data/（需要代理时先 export https_proxy=...）
 
 # 本地 base model（默认配置即此组合，模型在 models/ 下，GPU 运行）：
@@ -63,6 +74,7 @@ CUDA_VISIBLE_DEVICES=0 python scripts/run_experiment.py \
 | `rag` | ✅ | Naive RAG：embedding 余弦相似度 top-k 检索 |
 | `amem` | ✅ | A-MEM 复现（`baselines/amem.py`）：note 构建（LLM 生成 keywords/context/tags）→ 邻居链接 + 记忆演化（单次 LLM 决策 strengthen / update_neighbor）→ top-k 检索 + 链接扩展。prompt 与官方 repo 逐字一致，默认 evo_threshold=100、k_neighbors=5 |
 | `mem0` | ✅ | Mem0 复现（`baselines/mem0.py`，口径对齐官方 eval @v0.1.100）：写入侧与 Memory-R1 共用（mem0 式 fact 抽取 → ADD/UPDATE/DELETE/NONE Manager，按 speaker 双记忆库）；作答侧为论文口径：每 speaker top-10 检索 + Appendix A 基础 answer prompt（无 distillation、无 `**Answer:**` 指令），原始输出即答案。Mem0g（graph 变体）未实现 |
+| `promem` | ✅ | ProMem 复现（`baselines/promem/`）：细节/事件/关系多粒度抽取 → 完整性补全 → NLI + LLM 幻觉纯化 → 关系验证与细节锚定；通过 `add_session` 支持 HaluMem 会话级操作评测，也可经统一 `BaseMemory` 用于其他 benchmark |
 | `memoryr1` | ✅ | Memory-R1 推理 pipeline 复现（`baselines/memoryr1.py`，prompt 与官方 repo `yansikuan/memory-r1` 逐字一致）：按 speaker 双记忆库；每个 turn 经 mem0 式 fact 抽取 → Memory Manager 决策 ADD/UPDATE/DELETE/NONE（search_k=5）；Answer Agent 每 speaker 检索 top-30（共 60 条）+ Memory Distillation（先输出选中的记忆，再在 `**Answer:**` 后给 ≤5-6 词答案）。注意：论文核心是 RL 微调（PPO/GRPO，VERL，4×H100），官方未发布 checkpoint，本复现等价于论文 Figure 5 的 "BASE"（未微调）配置；训练脚本不在本仓库范围内 |
 | `memgpt` | 🚧 骨架 | MemGPT（分页式记忆层级），待实现 |
 | `langmem` | 🚧 骨架 | LangGraph LangMem，待封装 |
@@ -80,6 +92,8 @@ CUDA_VISIBLE_DEVICES=0 python scripts/run_experiment.py \
 | LongMemEval | `longmemeval` | `data/longmemeval/longmemeval_oracle.json`（已下载；`_s` 见下载脚本） | 官方 LLM-judge 模板（按 question_type 分模板，`_abs` 走 abstention 模板） |
 | MemoryAgentBench | `memoryagentbench` | `data/memoryagentbench/<Split>.parquet`（TTL 已下载） | context 按 chunk_size 分块注入 → 多问题作答 → exact_match / substring_exact_match（按 metadata.source 映射，与官方一致；recsys/infbench 子集暂跳过） |
 | GateMem | `gatemem` | `data/gatemem/<domain>/`（medical/office/education/household，已下载） | 自定义增量协议：逐 turn 注入、在 checkpoint 边界提问，要求 JSON {action, answer}；官方规则打分（action 匹配 / utility include 覆盖 / privacy & deletion 泄漏检测），汇总 U、A、F、OR、MGS=U·(1−A)·(1−F) |
+| HaluMem | `halumem` | `data/halumem/HaluMem-{Medium,Long}.jsonl`（已下载） | 官方 judge 模板：抽取 Recall/Weighted-R/Target-P/Accuracy/FMR/F1，更新与 QA 的 Correct/Hallucination/Omission；ProMem 支持全部操作，普通 `BaseMemory` 只报可计算的更新与 QA 指标 |
+| HotpotQA | `hotpotqa` | `data/hotpotqa/distractor_validation.parquet` | AgeMem agent 协议 + 本地 LLM judge |
 
 MemoryAgentBench 示例：
 
@@ -99,6 +113,33 @@ python scripts/run_experiment.py --benchmark gatemem \
 ```
 
 注意：GateMem 的 LLM-judge（论文主指标）暂未接入，当前为官方规则辅助打分。
+
+HaluMem + ProMem 快速验证（1 用户、1 会话、每会话最多 3 题）：
+
+```bash
+CUDA_VISIBLE_DEVICES=1 python scripts/run_experiment.py \
+    --benchmark halumem --data data/halumem/HaluMem-Medium.jsonl \
+    --method promem --config configs/baselines/promem.yaml \
+    --max-conversations 1 --max-sessions 1 --max-questions 3 \
+    --output results/promem_halumem_smoke.jsonl
+# 仅 QA（跳过抽取/更新裁判）：--eval-mode qa
+```
+
+TrustMem 使用独立的训练/评测入口（策略 rollout 需要 token logprob，不能伪装成普通
+`BaseMemory`）。默认是缩小训练：16 instance × 8 rollout × 3 step；产物在 `results/trustmem/`：
+
+```bash
+python scripts/train_trustmem.py driver --train-instances 16 --steps 3 --rollouts 8 \
+    --max-chunks 5 --max-questions 5 --work-dir results/trustmem/smoke
+python scripts/eval_trustmem.py driver --ckpt models/Qwen3-4B --tag base --n 20
+python scripts/eval_trustmem.py driver --ckpt models/Qwen3-4B-TrustMem-smoke --tag step3 --n 20
+```
+
+TrustMem 的 Verifier 从 coverage / preservation / faithfulness 三个维度检查
+`z_t=(c_t,M_{t-1},a_t,M_t)`；TR-GRPO 奖励为
+`R_task + R_act + 0.1 R_ver + 0.05 R_eff + 0.1 R_type`，并用验证器分数构造转移级偏好对。
+本地 Verifier/judge 为 Qwen3-4B-Instruct-2507，替代论文冻结大模型/GPT-4o-mini；
+Mem-α 数据来自 `wangyu-ustc/Mem-alpha`，官方 TrustMem 代码未开源，本实现为论文复现。
 
 ## 实验结果
 
@@ -202,9 +243,62 @@ backbone 与论文一致为 Qwen3-4B 量级（Qwen3-4B-Instruct-2507）。
 工具使用模式与论文 noRL 一致：Retrieve 最频繁，Summary/Filter 几乎不用，
 RL 后这些才显著上升——印证论文"RL 教会主动记忆管理"的核心结论。
 
+### TrustMem 缩小复现（迁移自原 TrustMem 项目）
+
+16 个训练实例、8 rollout、3 步；验证为 20 个均衡实例、100 次记忆转移。
+基座与训练后模型均为 Qwen3-4B，裁判为本地 Qwen3-4B-Instruct-2507。
+
+| 指标 | Base | TR-GRPO step 3 |
+|---|---:|---:|
+| Omission rate ↓ | 0.600 | 0.600 |
+| Corruption rate ↓ | 0.000 | 0.020 |
+| Hallucination rate ↓ | 0.060 | 0.070 |
+| Mean task score ↑ | 0.215 | 0.225 |
+
+训练过程 `mean_ver` 从 0.708 升至 0.819、`mean_reward` 从 1.233 升至 1.369。
+但独立验证上的幻觉率没有下降，因此这组缩小实验只验证训练与评测链路，**不能作为
+TrustMem 提升安全性的结论**；论文完整规模为 32×H100 × 2 天/85 步，此处不可直接比较。
+结果文件：`results/trustmem/{history,eval_base,eval_step3}.json`，最终缩小 checkpoint 在
+`models/Qwen3-4B-TrustMem-smoke/`（均不入库）。
+
+### ProMem 与 Mem0 的 HaluMem 对照（迁移结果）
+
+原项目已完成的 HaluMem-Medium 同 3 用户、521 道 QA 对照；两方法使用同一本地
+Qwen3-4B-Instruct 裁判。数值单位为 %，C/H/O 分别为正确/幻觉/遗漏。
+
+| 指标 | ProMem | Mem0-local |
+|---|---:|---:|
+| Recall / Weighted R ↑ | 38.86 / 52.95 | **81.30 / 85.19** |
+| Target Precision ↑ | **99.70** | 98.14 |
+| Accuracy / FMR ↑ | **67.72** / 59.22 | 66.55 / **70.91** |
+| Extraction F1 ↑ | 55.93 | **88.93** |
+| Updating C / H / O | 31.62 / **0.23** / 68.15 | **78.69** / 2.58 / **18.74** |
+| QA C / H / O | **49.90** / **32.05** / 18.04 | 47.79 / 37.24 / **14.97** |
+
+ProMem 的 Target Precision 与 QA 正确率略高，但 NLI 过剪导致召回明显偏低；
+该结果支持“更精确”的方向，不支持“全面优于 Mem0”。使用 Qwen3-4B 替代论文的
+GPT-4o-mini/Llama3.1-8B、Qwen3-Embedding-0.6B 替代 8B，绝对值不与论文排行榜直接比较。
+迁移汇总：`results/promem_vs_mem0_halumem_medium_migrated.json`。
+
+### 整合后 ProMem 全链路验证（HaluMem-Medium 1 用户/1 会话）
+
+统一入口真实运行完成：15 个目标记忆点、11 条系统抽取记忆、3 道 QA，裁判解析失败数为 0。
+汇总实现另在原 3 用户评测 artifact 上复核，12/12 项核心指标与官方聚合结果完全一致。
+
+| Recall | Weighted R | Target P | Extraction F1 | QA C / H / O |
+|---:|---:|---:|---:|---:|
+| 0.600 | 0.667 | 0.955 | 0.737 | 0.667 / 0.333 / 0.000 |
+
+其中 2/3 QA 判为 Correct，另 1 题因回答没有完整纠正“与伴侣在 2025 年已建立项目”
+而判为 Hallucination。该会话没有更新或 interference 样本，因此不报告更新与 FMR 指标；
+此结果仅用于验证整合后的端到端正确性，不与上面的 3 用户结果直接比较。
+产物：`results/promem_halumem_medium_1user_1session.jsonl`、对应 `.log` 与
+`results/promem_halumem_medium_1user_1session_summary.json`。
+
 ## Roadmap
 
 1. ~~用本地开源模型跑 LoCoMo，对齐 A-MEM 论文结果~~（已完成，见上）
-2. 实现 `methods/ours`（接口已就位，可直接对比）
-3. GateMem 接入 LLM-judge；MemoryAgentBench 补 recsys (Recall@5) 与 infbench (LLM-F1) 子集
-4. 成本/延迟统计（token usage、检索耗时）纳入统一报告
+2. 面向记忆幻觉/污染/隐私泄露设计 `methods/ours`（接口已就位，算法暂不实现）
+3. 扩大 HaluMem 多用户对照，统一 ProMem/Mem0 摄入协议；补 TrustMem 更大规模训练验证
+4. GateMem 接入 LLM-judge；MemoryAgentBench 补 recsys (Recall@5) 与 infbench (LLM-F1) 子集
+5. 成本/延迟统计（token usage、检索耗时）纳入统一报告

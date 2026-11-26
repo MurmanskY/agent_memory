@@ -28,7 +28,7 @@ from agent_memory.methods import get_method
 def main() -> None:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--benchmark", required=True,
-                   help="locomoco | longmemeval | memoryagentbench | gatemem")
+                   help="locomoco | longmemeval | memoryagentbench | gatemem | halumem | hotpotqa")
     p.add_argument("--data", required=True,
                    help="dataset file, or a domain directory for gatemem")
     p.add_argument("--method", required=True, help="full_context | rag | amem | ours | ...")
@@ -53,6 +53,10 @@ def main() -> None:
                    help="memoryagentbench only: keep one metadata.source subset")
     p.add_argument("--chunk-size", type=int, default=4096,
                    help="memoryagentbench only: context chunk size (~tokens)")
+    p.add_argument("--max-sessions", type=int, default=None,
+                   help="halumem only: max sessions per user")
+    p.add_argument("--eval-mode", choices=["all", "qa"], default="all",
+                   help="halumem only: full operation-level evaluation or QA only")
     args = p.parse_args()
 
     config = yaml.safe_load(open(args.config)) if args.config else {}
@@ -77,6 +81,9 @@ def main() -> None:
         memory, llm,
         top_k=int(config.get("top_k", 10)),
         max_episodes=args.max_conversations,
+        max_sessions=args.max_sessions,
+        max_questions=args.max_questions,
+        eval_mode=args.eval_mode,
         output_path=args.output,
     )
     if custom is not None:

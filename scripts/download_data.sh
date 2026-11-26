@@ -2,7 +2,7 @@
 # Download agent-memory benchmarks into data/.
 # Set https_proxy/http_proxy first if you need a proxy.
 set -euo pipefail
-mkdir -p data/locomoco data/longmemeval data/memoryagentbench
+mkdir -p data/locomoco data/longmemeval data/memoryagentbench data/halumem data/memalpha
 
 # --- LoCoMo (main benchmark of the A-MEM paper) ---
 # Source: https://github.com/snap-research/locomo
@@ -52,8 +52,23 @@ if [ ! -d data/gatemem/medical ]; then
   rm -rf "$tmp"
 fi
 
-echo "Done. Files:"
-ls -lhR data/ | head -40
+# --- HaluMem (operation-level memory hallucination) ---
+# Source: https://huggingface.co/datasets/IAAR-Shanghai/HaluMem
+for split in HaluMem-Medium HaluMem-Long; do
+  if [ ! -f "data/halumem/${split}.jsonl" ]; then
+    curl -L -o "data/halumem/${split}.jsonl" \
+      "https://huggingface.co/datasets/IAAR-Shanghai/HaluMem/resolve/main/${split}.jsonl"
+  fi
+done
+
+# --- Mem-alpha train/test pool used by TrustMem ---
+# Source: https://huggingface.co/datasets/YuWangX/Memalpha
+for split in train test; do
+  if [ ! -f "data/memalpha/${split}.parquet" ]; then
+    curl -L -o "data/memalpha/${split}.parquet" \
+      "https://huggingface.co/datasets/YuWangX/Memalpha/resolve/main/${split}.parquet"
+  fi
+done
 
 # --- HotpotQA (AgeMem 评测) ---
 # Source: HF hotpotqa/hotpot_qa (distractor validation, 7405 题)
@@ -62,3 +77,6 @@ if [ ! -f data/hotpotqa/distractor_validation.parquet ]; then
   curl -L -o data/hotpotqa/distractor_validation.parquet \
     "https://huggingface.co/datasets/hotpotqa/hotpot_qa/resolve/main/distractor/validation-00000-of-00001.parquet"
 fi
+
+echo "Done. Files:"
+ls -lhR data/ | head -40

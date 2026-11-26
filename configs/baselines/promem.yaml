@@ -1,0 +1,12 @@
+# ProMem (papers/ProMem.pdf): proactive extraction + NLI hallucination purification.
+method: promem
+top_k: 20
+llm: hf
+llm_kwargs:
+  model: models/Qwen3-4B-Instruct-2507
+  max_new_tokens: 2048
+embedder: sentence_transformers
+embedder_kwargs:
+  model: models/Qwen3-Embedding-0.6B
+nli_model: models/roberta-large-mnli
+tau_comp: 0.6
